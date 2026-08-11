@@ -508,66 +508,54 @@ int sbus3;
 
     }
 
+    // マジックナンバーを意味のある定数に置き換えます
+    const int ROLLER_SPEED = 240;
+    const int ROLLER_STOP = 0;
+    const int ROLLER_SPIN_NORMAL_PWM = 80;
+    const int ROLLER_SPIN_REVERSE_PWM = 150;
+
     void roller(void){
-        if (Lmayu == 1) {
-            if (Ltuno == 1) {
-                if (stop_flag == 0) {
-                  roller_dir = 0; 
-                  pwm7 = 80;
-                  motor_control(240,PV5, 5, 5, 255, &pwm5, &dummy);
-                  motor_control(240,PV6, 5, 5, 255, &pwm6, &dummy);
-                } else if (stop_flag == 1) {
-                  pwm7 = 0;
-                    // if (timer_flag == 0) {
-                    //     time2 = HAL_GetTick();
-                    //     timer_flag = 1;
-                    //     pwm7 = 0;
-                    // }
-                    // if (HAL_GetTick() - time2 >= 500) {// 1秒経過したらモーターを止める
-                     
-                    //   motor_control(0, PV5, 5, 5, 230, &pwm5, &dummy);
-                    //   motor_control(0, PV6, 5, 5, 230, &pwm6, &dummy);
-                    // }
+        switch (Lmayu) {
+            case 1: 
+                if ((Ltuno == 1 && stop_flag == 0) || Ltuno == -1) {
+                    roller_dir = 0; // 正転
+                    pwm7 = ROLLER_SPIN_NORMAL_PWM;
+                    motor_control(ROLLER_SPEED, PV5, 5, 5, 255, &pwm5, &dummy);
+                    motor_control(ROLLER_SPEED, PV6, 5, 5, 255, &pwm6, &dummy);
+                } else { // Ltuno == 0 または (Ltuno == 1 && stop_flag == 1)
+                    pwm7 = 0;
+                    motor_control(ROLLER_STOP, PV5, 5, 5, 230, &pwm5, &dummy);
+                    motor_control(ROLLER_STOP, PV6, 5, 5, 230, &pwm6, &dummy);
                 }
-                
-            } else if (Ltuno == -1) {
-                roller_dir = 0; 
-                pwm7 = 80; 
-                motor_control(240,PV5, 5, 5, 255, &pwm5, &dummy);
-                motor_control(240,PV6, 5, 5, 255, &pwm6, &dummy);
-          }else{
-            pwm7 = 0;
-            motor_control(0, PV5, 5, 5, 230, &pwm5, &dummy);
-            motor_control(0, PV6, 5, 5, 230, &pwm6, &dummy);
-          }
-        }
-        if (Lmayu == 0) {
-            stop_flag = 0;
-            timer_flag = 0;
-            pwm7 = 0;
-            motor_control(240,PV5, 5, 5, 255, &pwm5, &dummy);
-            motor_control(240, PV6, 5, 5, 255, &pwm6, &dummy);
-        }
-        if (Lmayu == -1) {
-            stop_flag = 0;
-            timer_flag = 0;
-            motor_control(0, PV5, 5, 5, 230, &pwm5, &dummy);
-            motor_control(0, PV6, 5, 5, 230, &pwm6, &dummy);
-            if(reset_flag == 1){
-              if(set_flag == 0){
-              pwm7 = 150;
-              roller_dir = 1;
-            }else if(set_flag == 1){
-              pwm7 = 0;
-              reset_flag = 0;
-              set_flag = 0;
-            }
-            }else{
-              pwm7 = 0;
-            }
+                break;
+
+            case 0: 
+                stop_flag = 0;
+                timer_flag = 0;
+                pwm7 = 0;
+                motor_control(ROLLER_SPEED, PV5, 5, 5, 255, &pwm5, &dummy);
+                motor_control(ROLLER_SPEED, PV6, 5, 5, 255, &pwm6, &dummy);
+                break;
+
+          case -1:
+                stop_flag = 0;
+                timer_flag = 0;
+                motor_control(ROLLER_STOP, PV5, 5, 5, 230, &pwm5, &dummy);
+                motor_control(ROLLER_STOP, PV6, 5, 5, 230, &pwm6, &dummy);
+
+                if (reset_flag == 1 && set_flag == 0) {
+                    pwm7 = ROLLER_SPIN_REVERSE_PWM;
+                    roller_dir = 1; // 逆転
+                } else {
+                    pwm7 = 0;
+                    if (reset_flag == 1 && set_flag == 1) {
+                        reset_flag = 0;
+                        set_flag = 0;
+                    }
+                }
+                break;
         }
     }
-  
 
 
  void auto_mode(int distance1, int distance2, int reset_flag ,int target_dist) {
@@ -645,7 +633,7 @@ void safety(void) {
       pwm3 = 0;
       pwm4 = 0;
     }
-    if(SBUS_CH[0] == 0 || SBUS_LostFrame && HAL_GetTick() - last_can_rx > 100){//SBUSとCANが来ていない場合両方点滅
+    if((SBUS_CH[0] == 0 || SBUS_LostFrame )&& (HAL_GetTick() - last_can_rx > 100)){//SBUSとCANが来ていない場合両方点滅
       HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, 1);
       HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, 1);
       HAL_Delay(300);
