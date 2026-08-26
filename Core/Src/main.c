@@ -419,81 +419,38 @@ static uint16_t last_index7 = 0;
   }
 }
 
+// SBUS用のヘルパー関数
+int get_switch_state(int ch_value) {
+    if (ch_value > 1100) {
+      return -1;
+    }
+    if (ch_value < 300){
+      return 1;
+    } 
+    return 0;
+}
+
+int process_stick(int ch_value) {
+    if (ch_value > 1000 && ch_value < 1050){
+      ch_value = 1024;
+    } 
+    int mapped = map(ch_value, 368, 1680, -255, 255);
+    if (mapped <= 2 && mapped >= -2){
+      return 0; // デッドバンド
+    } 
+    return mapped;
+}
+
 void sbus(void){
-  
-int sbus0;
-int sbus1;
-int sbus2;
-int sbus3;
+    Lmayu = get_switch_state(SBUS_CH[4]);
+    Rmayu = get_switch_state(SBUS_CH[5]);
+    Ltuno = get_switch_state(SBUS_CH[6]);
+    Rtuno = get_switch_state(SBUS_CH[7]);
 
-    if (SBUS_CH[0] < 1050 && SBUS_CH[0] > 1000) {
-        sbus0 = 1024;
-    } else {
-        sbus0 = SBUS_CH[0];
-    }
-    if (SBUS_CH[1] < 1050 && SBUS_CH[1] > 1000) {
-        sbus1 = 1024;
-    } else {
-        sbus1 = SBUS_CH[1];
-    }
-    if (SBUS_CH[2] < 1050 && SBUS_CH[2] > 1000) {
-        sbus2 = 1024;
-    } else {
-        sbus2 = SBUS_CH[2];
-    }
-    if (SBUS_CH[3] < 1050 && SBUS_CH[3] > 1000) {
-        sbus3 = 1024;
-    } else {
-        sbus3 = SBUS_CH[3];
-    }
-
-    if (SBUS_CH[4] > 1100) {
-        Lmayu = -1;
-    } else if (SBUS_CH[4] < 300) {
-        Lmayu = 1;
-    } else {
-        Lmayu = 0;
-    }
-    if (SBUS_CH[5] > 1100) {
-        Rmayu = -1;
-    } else if (SBUS_CH[5] < 300) {
-        Rmayu = 1;
-    } else {
-        Rmayu = 0;
-    }
-    if (SBUS_CH[6] > 1100) {
-        Ltuno = -1;
-    } else if (SBUS_CH[6] < 300) {
-        Ltuno = 1;
-    } else {
-        Ltuno  = 0;
-    }
-    if (SBUS_CH[7] > 1100) {
-        Rtuno = -1;
-    } else if (SBUS_CH[7] < 300) {
-        Rtuno = 1;
-    } else {
-        Rtuno = 0;
-    }
-
-    rx = map(sbus0, 368, 1680, -255, 255);
-    ly = map(sbus1, 368, 1680, -255, 255);
-    ry = map(sbus2, 368, 1680, -255, 255);
-    lx = map(sbus3, 368, 1680, -255, 255);
-
-    // デッドバンド処理
-    if (rx <= 2 && rx >= -2) {
-        rx = 0;
-    }
-    if (ly <= 2 && ly >= -2) {
-        ly = 0;
-    }
-    if (ry <= 2 && ry >= -2) {
-        ry = 0;
-    }
-    if (lx <= 2 && lx >= -2) {
-        lx = 0;
-    }
+    rx = process_stick(SBUS_CH[0]);
+    ly = process_stick(SBUS_CH[1]);
+    ry = process_stick(SBUS_CH[2]);
+    lx = process_stick(SBUS_CH[3]);
 
     m1 =  ly - lx - rx; // 左前 (Front Left)
     m2 = -ly - lx - rx; // 右前 (Front Right)
@@ -505,7 +462,6 @@ int sbus3;
     m2 = (m2 * 7) / 10;
     m3 = (m3 * 7) / 10;
     m4 = (m4 * 7) / 10;
-
     }
 
     // マジックナンバーを意味のある定数に置き換えます
@@ -566,10 +522,9 @@ int sbus3;
     float prev_error;
     float integral;
 } PID;
-
 // 距離用(横移動)と角度用(旋回)のPID実体を作成（ゲインは実機で要調整）
-static PID distance  = {0.3, 0.0002, 0.01, 0, 0}; 
-static PID angle = {0.2, 0.0, 1.0, 0, 0};
+static PID distance  = {1.3, 0.008, 0.05, 0, 0}; 
+static PID angle = {1.3, 0.01, 0.2, 0, 0};
     float target_distance = target_dist; // 目標距離 (mm)
     float dt = 0.02; // 20ms周期
 
@@ -612,8 +567,22 @@ static PID angle = {0.2, 0.0, 1.0, 0, 0};
 }
 
 void safety(void) {
+  int sbus_error = 0;
+  int can_error = 0;
+  uint8_t blink_state = (now / 300) % 2;
+
+  if(SBUS_CH[0] == 0 || SBUS_LostFrame){
+    sbus_error = 1;
+  }else{
+    sbus_error = 0;
+  }
+  if(HAL_GetTick() - last_can_rx > 100){
+    can_error = 1;
+  }else{
+    can_error = 0;
+  }
     // SBUSの値とCANが来ていない場合、モーターを停止
-    if (SBUS_CH[0] == 0 || SBUS_LostFrame || HAL_GetTick() - last_can_rx > 100) {
+    if (sbus_error == 1 || can_error == 1) {
         pwm1 = 0;
         pwm2 = 0;
         pwm3 = 0;
@@ -622,8 +591,9 @@ void safety(void) {
         pwm6 = 0;
         pwm7 = 0;
         pwm8 = 0;
-    } else {
-        HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, 1);//blue
+    } else if(sbus_error == 1 && can_error == 1){
+        HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, 1);//green
+        HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);//blue
         HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, 0);//red
     }
     //ローラーと足回りが同時に動かないようにする
@@ -633,27 +603,17 @@ void safety(void) {
       pwm3 = 0;
       pwm4 = 0;
     }
-    if((SBUS_CH[0] == 0 || SBUS_LostFrame )&& (HAL_GetTick() - last_can_rx > 100)){//SBUSとCANが来ていない場合両方点滅
-      HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, 1);
-      HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, 1);
-      HAL_Delay(300);
-      HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, 0);
-      HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, 0);
-      HAL_Delay(300);
-    }else if(SBUS_CH[0] == 0 || SBUS_LostFrame ){//SBUSが来ていない場合青点滅
-      HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, 1);
-      HAL_Delay(300);
-      HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, 0);
-      HAL_Delay(300);
-    }else if(HAL_GetTick() - last_can_rx > 100){//CANが来ていない場合赤点滅
-      HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, 1);
-      HAL_Delay(300);
-      HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, 0);
-      HAL_Delay(300);
+
+    if(sbus_error == 1 ){//SBUSが来ていない場合青点滅
+      HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin,0);
+      HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin,blink_state);
     }
+    if(can_error == 1){//CANが来ていない場合赤点滅
+      HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, 0);
+      HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, blink_state);
+}
 }
 
-   
   
 
 /* USER CODE END 0 */
@@ -726,13 +686,11 @@ int main(void)
   uint8_t startCmd[] = {0x5A, 0x0A, 0x02, 0x02, 0x00, 0xF1};
   // センサー1 (UART4) に送信 & DMAスタート
   HAL_UART_Transmit(&huart4, startCmd, sizeof(startCmd), HAL_MAX_DELAY);
-  HAL_Delay(20);
-  HAL_UART_Receive_DMA(&huart4, rx_dma_buf4, DMA_BUF_SIZE);
-
-  // センサー2 (UART7) に送信 & DMAスタート ★追加
   HAL_UART_Transmit(&huart7, startCmd, sizeof(startCmd), HAL_MAX_DELAY);
   HAL_Delay(20);
+  HAL_UART_Receive_DMA(&huart4, rx_dma_buf4, DMA_BUF_SIZE);
   HAL_UART_Receive_DMA(&huart7, rx_dma_buf7, DMA_BUF_SIZE);
+
 
   /* USER CODE END 2 */
 
@@ -751,7 +709,6 @@ int main(void)
 
         lidar();//lidarの値の読み取り
       
-
         if(HAL_GPIO_ReadPin(lock6_GPIO_Port, lock6_Pin) == 0){
           stop_flag = 1;
         }
@@ -767,17 +724,17 @@ int main(void)
    if (now - time1 >= 20) {
       if(Rtuno == 1) {
         // 手動モード
-        auto_mode(distance4,distance7, 1,1000); // ★追加：裏でPIDの記憶をリセットしておく
+        auto_mode(distance4 ,distance7, 1,1000); // ★追加：裏でPIDの記憶をリセットしておく
         motor_control(m1, PV1, 40, 40, maxpwm, &pwm1, &dir1);
         motor_control(m2, PV2, 40, 40, maxpwm, &pwm2, &dir2);
         motor_control(m3, PV3, 40, 40, maxpwm, &pwm3, &dir3);
         motor_control(m4, PV4, 40, 40, maxpwm, &pwm4, &dir4);
       } else if(Rtuno == 0){
-        auto_mode(distance4, distance7, 0,(distance4 + distance7) / 2); 
-        int gauto_m1 =  ly - lx - auto_rx;
-        int gauto_m2 = -ly - lx - auto_rx;
-        int gauto_m3 = -ly + lx - auto_rx;
-        int gauto_m4 =  ly + lx - auto_rx;
+        auto_mode(distance4 - 11, distance7 - 38, 0,(distance4  + distance7 -49) / 2); 
+        int gauto_m1 =  ly - lx + auto_rx;
+        int gauto_m2 = -ly - lx + auto_rx;
+        int gauto_m3 = -ly + lx + auto_rx;
+        int gauto_m4 =  ly + lx + auto_rx;
 
         motor_control(gauto_m1, PV1, 40, 40, maxpwm, &pwm1, &dir1);
         motor_control(gauto_m2, PV2, 40, 40, maxpwm, &pwm2, &dir2);
@@ -786,13 +743,13 @@ int main(void)
 
       }else if(Rtuno == -1) {
         // 自動モード
-        auto_mode(distance4, distance7, 0,1000); // ★修正：通常計算
+        auto_mode(distance4 + -11, distance7 - 38, 0,500); // ★修正：通常計算
 
         // 自動計算された ly, rx を使って m1〜m4 を計算（あなたの式を再利用！）
-        int auto_m1 =  auto_ly - lx - auto_rx;
-        int auto_m2 = -auto_ly - lx - auto_rx;
-        int auto_m3 = -auto_ly + lx - auto_rx;
-        int auto_m4 =  auto_ly + lx - auto_rx;
+        int auto_m1 =  -auto_ly - lx + auto_rx;
+        int auto_m2 =   auto_ly - lx + auto_rx;
+        int auto_m3 =   auto_ly + lx + auto_rx;
+        int auto_m4 =  -auto_ly + lx + auto_rx;
 
         // 計算結果をモーターに出力
         motor_control(auto_m1, PV1, 40, 40, maxpwm, &pwm1, &dir1);
@@ -823,16 +780,16 @@ int main(void)
 
 
     // デバッグ用のprintf、100msごとに出力
-    // uint32_t time = 0;
-    // if (HAL_GetTick() - time >= 100) {
-    //   //printf("data0:%d data1:%d data2:%d data3:%d data4:%d data5:%d data6:%d data7:%d\n", use_data[0], use_data[1], use_data[2], use_data[3], use_data[4], use_data[5], use_data[6], use_data[7]); 
-    //    //printf("0:%d 1:%d 2:%d 3:%d 4:%d 5:%d 6:%d 7:%d\n", sbus0, sbus1, sbus2, sbus3 ,SBUS_CH[4], SBUS_CH[5], SBUS_CH[6], SBUS_CH[7]);
-    //   // printf("PV1:%d PV2:%d  PV3:%d PV4:%d m1:%d m2:%d m3:%d m4:%d lastMV1:%.1f lastMV2:%.1f lastMV3:%.1f lastMV4:%.1f\n", PV1, PV2, PV3, PV4, m1, m2, m3, m4, (float)lastMV1, (float)lastMV2, (float)lastMV3, (float)lastMV4);
-    //   // printf("m1:%d d1:%d m2:%d d2:%d m3:%d d3:%d m4:%d d4:%d ltsw:%d rtsw:%d pwm1 %d\n", m1, d1, m2, d2, m3, d3, m4, d4,ltsw,rtsw,pwm1);
-    //   //printf("stop_flag: %d\n", stop_flag);
-    //   printf("distance4: %d output_speed: %d\n", distance4, output_speed);
-    //   time = HAL_GetTick(); // 時間更新
-    // }
+    uint32_t time = 0;
+    if (HAL_GetTick() - time >= 100) {
+      //printf("data0:%d data1:%d data2:%d data3:%d data4:%d data5:%d data6:%d data7:%d\n", use_data[0], use_data[1], use_data[2], use_data[3], use_data[4], use_data[5], use_data[6], use_data[7]); 
+       //printf("0:%d 1:%d 2:%d 3:%d 4:%d 5:%d 6:%d 7:%d\n", sbus0, sbus1, sbus2, sbus3 ,SBUS_CH[4], SBUS_CH[5], SBUS_CH[6], SBUS_CH[7]);
+      // printf("PV1:%d PV2:%d  PV3:%d PV4:%d m1:%d m2:%d m3:%d m4:%d lastMV1:%.1f lastMV2:%.1f lastMV3:%.1f lastMV4:%.1f\n", PV1, PV2, PV3, PV4, m1, m2, m3, m4, (float)lastMV1, (float)lastMV2, (float)lastMV3, (float)lastMV4);
+      // printf("m1:%d d1:%d m2:%d d2:%d m3:%d d3:%d m4:%d d4:%d ltsw:%d rtsw:%d pwm1 %d\n", m1, d1, m2, d2, m3, d3, m4, d4,ltsw,rtsw,pwm1);
+      //printf("stop_flag: %d\n", stop_flag);
+      printf("distance4: %d distance7: %d\n", distance4, distance7);
+      time = HAL_GetTick(); // 時間更新
+    }
 
     //motor
     __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_4, pwm1); // m1 LF
