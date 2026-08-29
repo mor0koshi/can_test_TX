@@ -1,0 +1,52 @@
+#ifndef __SBUS_HANDLER_H
+#define __SBUS_HANDLER_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "main.h"
+#include "sbus.h"
+#include <stdint.h>
+
+/* ペリフェラルハンドル (main.c で定義) */
+extern UART_HandleTypeDef huart5;
+
+/* SBUS受信バッファ・チャンネル値 (main.c で定義) */
+extern uint8_t sbus_rxbuf[SBUS_FRAME_LEN];
+extern uint8_t sbus_frame[SBUS_FRAME_LEN];
+extern volatile uint16_t SBUS_CH[16];
+extern uint8_t SBUS_Failsafe;
+extern uint8_t SBUS_LostFrame;
+
+/* スティック・スイッチ加工後の値 (main.c で定義) */
+extern int rx;
+extern int ly;
+extern int ry;
+extern int lx;
+
+extern int Lmayu;
+extern int Rmayu;
+extern int Ltuno;
+extern int Rtuno;
+
+extern volatile int m1;
+extern volatile int m2;
+extern volatile int m3;
+extern volatile int m4;
+
+/* 関数プロトタイプ */
+long map(long x, long in_min, long in_max, long out_min, long out_max);
+
+void SBUS_Init(void);
+void SBUS_Process(void);
+
+int get_switch_state(int ch_value);
+int process_stick(int ch_value);
+void sbus(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* __SBUS_HANDLER_H */

@@ -23,6 +23,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "sbus.h"
+#include "function.h"
+#include "sbus_handler.h"
+#include "lidar_sensor.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -40,7 +43,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define DMA_BUF_SIZE 128
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -129,8 +131,10 @@ int pwm6 = 0;
 int pwm7 = 0;
 int pwm8 = 0;
 
-int maxpwm = (255 * 7) / 10; // 最大PWM値を0.7倍にして減速させる
+int maxpwm = (1000 * 7) / 10; // 最大PWM値を0.7倍にして減速させる
 //int test;
+
+int maxmv = 150;
 
 int stop_flag = 0;
 int timer_flag = 0;
@@ -157,19 +161,10 @@ int auto_rx = 0; // 旋回
 //timercount
 uint32_t time1 = 0;
 uint32_t time2 = 0;
+//uint32_t time3 = 0;
 uint32_t now = 0;
 
 uint32_t last_can_rx = 0;
-
-// map関数
-long map(long x, long in_min, long in_max, long out_min, long out_max) {
-    if (x < in_min)
-        x = in_min;
-    if (x > in_max)
-        x = in_max;
-
-    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
 
 // SBUS
 
@@ -179,109 +174,8 @@ volatile uint16_t SBUS_CH[16];
 uint8_t SBUS_Failsafe = 0;
 uint8_t SBUS_LostFrame = 0;
 
-void SBUS_Process(void);
-
-/* ===================== */
-/* 初期化                */
-/* ===================== */
-void SBUS_Init(void) {
-    HAL_UARTEx_ReceiveToIdle_DMA(&huart5, sbus_rxbuf, SBUS_FRAME_LEN);
-    __HAL_DMA_DISABLE_IT(huart5.hdmarx, DMA_IT_HT);
-}
-
-/* ===================== */
-/* 受信イベント          */
-/* ===================== */
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
-    if (huart->Instance == UART5) {
-        for (int i = 0; i < Size - 24; i++) {
-            if (sbus_rxbuf[i] == 0x0F) {
-                memcpy(sbus_frame, &sbus_rxbuf[i], 25);
-                SBUS_Process();
-                break;
-            }
-        }
-    }
-
-    HAL_UARTEx_ReceiveToIdle_DMA(&huart5, sbus_rxbuf, SBUS_FRAME_LEN);
-}
-/* ===================== */
-/* SBUSデコード          */
-/* ===================== */
-void SBUS_Process(void) {
-    //@brief  The application entry point.
-    // if(sbus_frame[0] != 0x0F)
-    //    return;
-
-    SBUS_CH[0] = (sbus_frame[1] | sbus_frame[2] << 8) & 0x07FF;
-    SBUS_CH[1] = (sbus_frame[2] >> 3 | sbus_frame[3] << 5) & 0x07FF;
-    SBUS_CH[2] = (sbus_frame[3] >> 6 | sbus_frame[4] << 2 | sbus_frame[5] << 10) & 0x07FF;
-    SBUS_CH[3] = (sbus_frame[5] >> 1 | sbus_frame[6] << 7) & 0x07FF;
-    SBUS_CH[4] = (sbus_frame[6] >> 4 | sbus_frame[7] << 4) & 0x07FF;
-    SBUS_CH[5] = (sbus_frame[7] >> 7 | sbus_frame[8] << 1 | sbus_frame[9] << 9) & 0x07FF;
-    SBUS_CH[6] = (sbus_frame[9] >> 2 | sbus_frame[10] << 6) & 0x07FF;
-    SBUS_CH[7] = (sbus_frame[10] >> 5 | sbus_frame[11] << 3) & 0x07FF;
-    SBUS_CH[8] = (sbus_frame[12] | sbus_frame[13] << 8) & 0x07FF;
-    SBUS_CH[9] = (sbus_frame[13] >> 3 | sbus_frame[14] << 5) & 0x07FF;
-    SBUS_CH[10] = (sbus_frame[14] >> 6 | sbus_frame[15] << 2 | sbus_frame[16] << 10) & 0x07FF;
-    SBUS_CH[11] = (sbus_frame[16] >> 1 | sbus_frame[17] << 7) & 0x07FF;
-    SBUS_CH[12] = (sbus_frame[17] >> 4 | sbus_frame[18] << 4) & 0x07FF;
-    SBUS_CH[13] = (sbus_frame[18] >> 7 | sbus_frame[19] << 1 | sbus_frame[20] << 9) & 0x07FF;
-    SBUS_CH[14] = (sbus_frame[20] >> 2 | sbus_frame[21] << 6) & 0x07FF;
-    SBUS_CH[15] = (sbus_frame[21] >> 5 | sbus_frame[22] << 3) & 0x07FF;
-
-    SBUS_LostFrame = (sbus_frame[23] >> 2) & 0x01;
-    SBUS_Failsafe = (sbus_frame[23] >> 3) & 0x01;
-}
-
-// CAN
- void CAN_TX(uint32_t recipient) {
-     //送信用インスタンス等
- 	CAN_TxHeaderTypeDef TxHeader;
- 	uint32_t TxMailbox;
- 	uint8_t TxData[8];
-     //送信メールボックスに空きがあったら送信開始
- 	if (0 < HAL_CAN_GetTxMailboxesFreeLevel(&hcan1)) {
-         //送信用インスタンスの設定
- 		TxHeader.StdId = recipient;// 受取手のCANのID
- 		TxHeader.RTR = CAN_RTR_DATA;
- 		TxHeader.IDE = CAN_ID_STD;
- 		TxHeader.DLC = 8;//データ長を8byteに設定
- 		TxHeader.TransmitGlobalTime = DISABLE;
-         //各データ
- 		TxData[0] = 1;
- 		TxData[1] = 0;
- 		TxData[2] = 0;
- 		TxData[3] = 0;
- 		TxData[4] = 0;
- 		TxData[5] = 0;
- 		TxData[6] = 0;
- 		TxData[7] = 0;
-         //CANメッセージを送信
- 		if (HAL_CAN_AddTxMessage(&hcan1, &TxHeader, TxData, &TxMailbox)
- != HAL_OK) {Error_Handler();
- 		}
- 	}
- }
-// RX割り込みコールバック関数
+// RX割り込みコールバック関数で使用
 volatile uint8_t use_data[8];
-void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan1) {
-    CAN_RxHeaderTypeDef RxHeader; // 受信メッセージの情報が格納されるインスタンス
-    uint8_t RxData[8];            // 受信したデータを一時保存する配列
-    uint32_t id;                  // CANメッセージIDを格納する変数
-    if (HAL_CAN_GetRxMessage(hcan1, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK) {
-        id = RxHeader.StdId; // RxHeaderの中に入っているidを取り出す
-        if (id == 0x001 && RxHeader.DLC >= 8) { // idが0x001でデータ長が8以上の場合
-            last_can_rx = HAL_GetTick();          // 受信時刻を更新
-            for (int i = 0; i <= 7; i++) {
-                use_data[i] = RxData[i];
-            }
-        }
-    }
-}
-
-
-
 
 /* USER CODE END PV */
 
@@ -307,315 +201,6 @@ static void MX_UART7_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void motor_control(int SV,int PV,int maxMV ,int down_pwm,int max_pwm,int *pwmm,int *dirr) {
-
-    int error = 0;
-    int MV = 0;
-    int lastMV = 0;
-    int pwm = *pwmm; //前回の値を保持
-    int target_dir = 0;
-    int dir = *dirr; //前回の値を保持
-
-    // リミッター処理
-    if (SV > max_pwm) {
-        SV = max_pwm;
-    }else if (SV < -max_pwm) {
-        SV = -max_pwm;
-    }
-
-    // dir設定と値を絶対値にしている
-
-    if (SV < 0) {
-        target_dir = 0;
-        SV = -SV;
-    } else if (SV > 0) {
-        target_dir = 1;
-    }
-    error = SV - PV;
-
-    MV =  error / 10;//ki=0.1
-
-    if (MV > maxMV) {
-        lastMV = maxMV;
-    } else if (MV < -maxMV) {
-        lastMV = -maxMV;
-    } else {
-        lastMV = MV;
-    }
-
-    // モーターの回転方向が目標と異なる場合一旦pwmが0になってから回転方向を変える
-    if (SV != 0) {
-        if (dir != target_dir) {
-            if (pwm > down_pwm) {
-                pwm -= down_pwm;
-            } else {
-                pwm = 0;
-                dir = target_dir;
-            }
-        } else {
-            pwm += lastMV;
-            if (pwm < 0) {
-                pwm = 0;
-            }
-        }
-    }
-    // PWMの値が0~maxpwmの範囲を超えないようにする
-    if (pwm > max_pwm) {
-        pwm = max_pwm;
-    } else if (pwm < 0) {
-        pwm = 0;
-    }
-    // コントローラーの値が0の時に緩やかにモーターの停止
-    if (SV == 0) {
-        if (pwm > down_pwm) {
-          pwm -= down_pwm;
-        } else {
-          pwm = 0;
-        }
-    }
-
-    // pwmの値を正の値に変換
-    pwm = abs(pwm);
-    *pwmm = pwm;
-    *dirr = dir;
-}
-
-void lidar(void){
-static uint16_t last_index4 = 0;
-static uint16_t last_index7 = 0;
-
-  // -------------------------------------------------------------
-  // 1. UART4 (センサー1) の解析処理
-  // -------------------------------------------------------------
-  uint16_t current_index4 = DMA_BUF_SIZE - __HAL_DMA_GET_COUNTER(&hdma_uart4_rx);
-  while (last_index4 != current_index4) {
-      if (rx_dma_buf4[last_index4] == 0x5C) {
-          uint16_t idx_lsb = (last_index4 + 1) % DMA_BUF_SIZE;
-          uint16_t idx_msb = (last_index4 + 2) % DMA_BUF_SIZE;
-          
-          uint16_t temp_dist = (rx_dma_buf4[idx_msb] << 8) | rx_dma_buf4[idx_lsb];
-          if (temp_dist <= 20000) {
-              distance4 = temp_dist; // 1台目の距離
-          }
-      }
-      last_index4 = (last_index4 + 1) % DMA_BUF_SIZE;
-  }
-
-  // -------------------------------------------------------------
-  // 2. UART7 (センサー2) の解析処理 ★追加
-  // -------------------------------------------------------------
-  uint16_t current_index7 = DMA_BUF_SIZE - __HAL_DMA_GET_COUNTER(&hdma_uart7_rx);
-  while (last_index7 != current_index7) {
-      if (rx_dma_buf7[last_index7] == 0x5C) {
-          uint16_t idx_lsb = (last_index7 + 1) % DMA_BUF_SIZE;
-          uint16_t idx_msb = (last_index7 + 2) % DMA_BUF_SIZE;
-          
-          uint16_t temp_dist = (rx_dma_buf7[idx_msb] << 8) | rx_dma_buf7[idx_lsb];
-          if (temp_dist <= 20000) {
-              distance7 = temp_dist; // 2台目の距離
-          }
-      }
-      last_index7 = (last_index7 + 1) % DMA_BUF_SIZE;
-  }
-}
-
-// SBUS用のヘルパー関数
-int get_switch_state(int ch_value) {
-    if (ch_value > 1100) {
-      return -1;
-    }
-    if (ch_value < 300){
-      return 1;
-    } 
-    return 0;
-}
-
-int process_stick(int ch_value) {
-    if (ch_value > 1000 && ch_value < 1050){
-      ch_value = 1024;
-    } 
-    int mapped = map(ch_value, 368, 1680, -255, 255);
-    if (mapped <= 2 && mapped >= -2){
-      return 0; // デッドバンド
-    } 
-    return mapped;
-}
-
-void sbus(void){
-    Lmayu = get_switch_state(SBUS_CH[4]);
-    Rmayu = get_switch_state(SBUS_CH[5]);
-    Ltuno = get_switch_state(SBUS_CH[6]);
-    Rtuno = get_switch_state(SBUS_CH[7]);
-
-    rx = process_stick(SBUS_CH[0]);
-    ly = process_stick(SBUS_CH[1]);
-    ry = process_stick(SBUS_CH[2]);
-    lx = process_stick(SBUS_CH[3]);
-
-    m1 =  ly - lx - rx; // 左前 (Front Left)
-    m2 = -ly - lx - rx; // 右前 (Front Right)
-    m3 = -ly + lx - rx; // 左後 (Rear Left)
-    m4 =  ly + lx - rx; // 右後 (Rear Right)
-
-    // モーターの値を0.7倍して減速させる
-    m1 = (m1 * 7) / 10;
-    m2 = (m2 * 7) / 10;
-    m3 = (m3 * 7) / 10;
-    m4 = (m4 * 7) / 10;
-    }
-
-    // マジックナンバーを意味のある定数に置き換えます
-    const int ROLLER_SPEED = 240;
-    const int ROLLER_STOP = 0;
-    const int ROLLER_SPIN_NORMAL_PWM = 80;
-    const int ROLLER_SPIN_REVERSE_PWM = 150;
-
-    void roller(void){
-        switch (Lmayu) {
-            case 1: 
-                if ((Ltuno == 1 && stop_flag == 0) || Ltuno == -1) {
-                    roller_dir = 0; // 正転
-                    pwm7 = ROLLER_SPIN_NORMAL_PWM;
-                    motor_control(ROLLER_SPEED, PV5, 5, 5, 255, &pwm5, &dummy);
-                    motor_control(ROLLER_SPEED, PV6, 5, 5, 255, &pwm6, &dummy);
-                } else { // Ltuno == 0 または (Ltuno == 1 && stop_flag == 1)
-                    pwm7 = 0;
-                    motor_control(ROLLER_STOP, PV5, 5, 5, 230, &pwm5, &dummy);
-                    motor_control(ROLLER_STOP, PV6, 5, 5, 230, &pwm6, &dummy);
-                }
-                break;
-
-            case 0: 
-                stop_flag = 0;
-                timer_flag = 0;
-                pwm7 = 0;
-                motor_control(ROLLER_SPEED, PV5, 5, 5, 255, &pwm5, &dummy);
-                motor_control(ROLLER_SPEED, PV6, 5, 5, 255, &pwm6, &dummy);
-                break;
-
-          case -1:
-                stop_flag = 0;
-                timer_flag = 0;
-                motor_control(ROLLER_STOP, PV5, 5, 5, 230, &pwm5, &dummy);
-                motor_control(ROLLER_STOP, PV6, 5, 5, 230, &pwm6, &dummy);
-
-                if (reset_flag == 1 && set_flag == 0) {
-                    pwm7 = ROLLER_SPIN_REVERSE_PWM;
-                    roller_dir = 1; // 逆転
-                } else {
-                    pwm7 = 0;
-                    if (reset_flag == 1 && set_flag == 1) {
-                        reset_flag = 0;
-                        set_flag = 0;
-                    }
-                }
-                break;
-        }
-    }
-
-
- void auto_mode(int distance1, int distance2, int reset_flag ,int target_dist) {
-  typedef struct {
-    float Kp;
-    float Ki;
-    float Kd;
-    float prev_error;
-    float integral;
-} PID;
-// 距離用(横移動)と角度用(旋回)のPID実体を作成（ゲインは実機で要調整）
-static PID distance  = {1.3, 0.008, 0.05, 0, 0}; 
-static PID angle = {1.3, 0.01, 0.2, 0, 0};
-    float target_distance = target_dist; // 目標距離 (mm)
-    float dt = 0.02; // 20ms周期
-
-    // --- 距離（平均）と角度（差分）の計算 ---
-    float current_dist = (distance1 + distance2) / 2.0;//現在の距離
-    float error_dist = current_dist - target_distance; // 距離のズレ
-    float error_angle = distance1 - distance2;        // 角度のズレ
-
-    // --- モード切替時のリセット処理 ---
-    if (reset_flag == 1) {
-        distance.Ki = 0;   
-        distance.prev_error = error_dist;
-        angle.Ki = 0;  
-        angle.prev_error = error_angle;
-        auto_ly = 0; auto_rx = 0;
-        return;
-    }
-
-    // --- 1. 距離を保つためのPID（縦移動力 ly を計算） ---
-    distance.integral += error_dist * dt;
-    if (distance.integral > 2000) distance.integral = 2000;   // 暴走防止
-    if (distance.integral < -2000) distance.integral = -2000;
-    
-    float derivative_dist = (error_dist - distance.prev_error) / dt;
-    
-    // ※ 符号は実機の「mae移動がプラスかマイナスか」に合わせて反転させてください
-    auto_ly = (int)((distance.Kp * error_dist) + (distance.Ki * distance.integral) + (distance.Kd * derivative_dist));
-    distance.prev_error = error_dist;
-
-    // --- 2. 平行にするためのPID（旋回力 rx を計算） ---
-    angle.integral += error_angle * dt;
-    if (angle.integral > 2000) angle.integral = 2000; // 暴走防止
-    if (angle.integral < -2000) angle.integral = -2000;
-    
-    float derivative_angle = (error_angle - angle.prev_error) / dt;
-    
-    // ※ 符号は実機の「右旋回がプラスかマイナスか」に合わせて反転させてください
-    auto_rx = (int)((angle.Kp * error_angle) + (angle.Ki * angle.integral) + (angle.Kd * derivative_angle));
-    angle.prev_error = error_angle;
-}
-
-void safety(void) {
-  int sbus_error = 0;
-  int can_error = 0;
-  uint8_t blink_state = (now / 300) % 2;
-
-  if(SBUS_CH[0] == 0 || SBUS_LostFrame){
-    sbus_error = 1;
-  }else{
-    sbus_error = 0;
-  }
-  if(HAL_GetTick() - last_can_rx > 100){
-    can_error = 1;
-  }else{
-    can_error = 0;
-  }
-    // SBUSの値とCANが来ていない場合、モーターを停止
-    if (sbus_error == 1 || can_error == 1) {
-        pwm1 = 0;
-        pwm2 = 0;
-        pwm3 = 0;
-        pwm4 = 0;
-        pwm5 = 0;
-        pwm6 = 0;
-        pwm7 = 0;
-        pwm8 = 0;
-    } else if(sbus_error == 1 && can_error == 1){
-        HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, 1);//green
-        HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);//blue
-        HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, 0);//red
-    }
-    //ローラーと足回りが同時に動かないようにする
-    if(pwm5 > 0 || pwm6 > 0){
-      pwm1 = 0;
-      pwm2 = 0;
-      pwm3 = 0;
-      pwm4 = 0;
-    }
-
-    if(sbus_error == 1 ){//SBUSが来ていない場合青点滅
-      HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin,0);
-      HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin,blink_state);
-    }
-    if(can_error == 1){//CANが来ていない場合赤点滅
-      HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, 0);
-      HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, blink_state);
-}
-}
-
-  
-
 /* USER CODE END 0 */
 
 /**
@@ -704,6 +289,13 @@ int main(void)
         PV4 = use_data[3];
         PV5 = use_data[4];
         PV6 = use_data[5];
+        map(PV1,0,255,0,1000);
+        map(PV2,0,255,0,1000);
+        map(PV3,0,255,0,1000);
+        map(PV4,0,255,0,1000);
+        map(PV5,0,255,0,1000);
+        map(PV6,0,255,0,1000);
+
 
         sbus();//SBUSの値の加工
 
@@ -725,10 +317,10 @@ int main(void)
       if(Rtuno == 1) {
         // 手動モード
         auto_mode(distance4 ,distance7, 1,1000); // ★追加：裏でPIDの記憶をリセットしておく
-        motor_control(m1, PV1, 40, 40, maxpwm, &pwm1, &dir1);
-        motor_control(m2, PV2, 40, 40, maxpwm, &pwm2, &dir2);
-        motor_control(m3, PV3, 40, 40, maxpwm, &pwm3, &dir3);
-        motor_control(m4, PV4, 40, 40, maxpwm, &pwm4, &dir4);
+        motor_control(m1, PV1, maxmv, maxmv, maxpwm, &pwm1, &dir1);
+        motor_control(m2, PV2, maxmv, maxmv, maxpwm, &pwm2, &dir2);
+        motor_control(m3, PV3, maxmv, maxmv, maxpwm, &pwm3, &dir3);
+        motor_control(m4, PV4, maxmv, maxmv, maxpwm, &pwm4, &dir4);
       } else if(Rtuno == 0){
         auto_mode(distance4 - 11, distance7 - 38, 0,(distance4  + distance7 -49) / 2); 
         int gauto_m1 =  ly - lx + auto_rx;
@@ -736,10 +328,10 @@ int main(void)
         int gauto_m3 = -ly + lx + auto_rx;
         int gauto_m4 =  ly + lx + auto_rx;
 
-        motor_control(gauto_m1, PV1, 40, 40, maxpwm, &pwm1, &dir1);
-        motor_control(gauto_m2, PV2, 40, 40, maxpwm, &pwm2, &dir2);
-        motor_control(gauto_m3, PV3, 40, 40, maxpwm, &pwm3, &dir3);
-        motor_control(gauto_m4, PV4, 40, 40, maxpwm, &pwm4, &dir4);
+        motor_control(gauto_m1, PV1, maxmv, maxmv, maxpwm, &pwm1, &dir1);
+        motor_control(gauto_m2, PV2, maxmv, maxmv, maxpwm, &pwm2, &dir2);
+        motor_control(gauto_m3, PV3, maxmv, maxmv, maxpwm, &pwm3, &dir3);
+        motor_control(gauto_m4, PV4, maxmv, maxmv, maxpwm, &pwm4, &dir4);
 
       }else if(Rtuno == -1) {
         // 自動モード
@@ -752,10 +344,10 @@ int main(void)
         int auto_m4 =  -auto_ly + lx + auto_rx;
 
         // 計算結果をモーターに出力
-        motor_control(auto_m1, PV1, 40, 40, maxpwm, &pwm1, &dir1);
-        motor_control(auto_m2, PV2, 40, 40, maxpwm, &pwm2, &dir2);
-        motor_control(auto_m3, PV3, 40, 40, maxpwm, &pwm3, &dir3);
-        motor_control(auto_m4, PV4, 40, 40, maxpwm, &pwm4, &dir4);
+        motor_control(auto_m1, PV1, maxmv, maxmv, maxpwm, &pwm1, &dir1);
+        motor_control(auto_m2, PV2, maxmv, maxmv, maxpwm, &pwm2, &dir2);
+        motor_control(auto_m3, PV3, maxmv, maxmv, maxpwm, &pwm3, &dir3);
+        motor_control(auto_m4, PV4, maxmv, maxmv, maxpwm, &pwm4, &dir4);
       }
 
       roller();
@@ -787,7 +379,8 @@ int main(void)
       // printf("PV1:%d PV2:%d  PV3:%d PV4:%d m1:%d m2:%d m3:%d m4:%d lastMV1:%.1f lastMV2:%.1f lastMV3:%.1f lastMV4:%.1f\n", PV1, PV2, PV3, PV4, m1, m2, m3, m4, (float)lastMV1, (float)lastMV2, (float)lastMV3, (float)lastMV4);
       // printf("m1:%d d1:%d m2:%d d2:%d m3:%d d3:%d m4:%d d4:%d ltsw:%d rtsw:%d pwm1 %d\n", m1, d1, m2, d2, m3, d3, m4, d4,ltsw,rtsw,pwm1);
       //printf("stop_flag: %d\n", stop_flag);
-      printf("distance4: %d distance7: %d\n", distance4, distance7);
+      //printf("distance4: %d distance7: %d\n", distance4, distance7);
+      printf("pwm5:%d pwm6:%d PV5:%d  PV6:%d\n",pwm5,pwm6,PV5,PV6);
       time = HAL_GetTick(); // 時間更新
     }
 
@@ -991,9 +584,9 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 23;
+  htim1.Init.Prescaler = 5;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 254;
+  htim1.Init.Period = 999;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -1082,9 +675,9 @@ static void MX_TIM4_Init(void)
 
   /* USER CODE END TIM4_Init 1 */
   htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 23;
+  htim4.Init.Prescaler = 5;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 254;
+  htim4.Init.Period = 999;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
@@ -1471,10 +1064,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-int _write(int file, char *ptr, int len) {
-  HAL_UART_Transmit(&huart3, (uint8_t *)ptr, len, 10);
-  return len;
-}
 /* USER CODE END 4 */
 
  /* MPU Configuration */
