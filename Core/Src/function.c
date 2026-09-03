@@ -147,13 +147,13 @@ void roller(void){
             if ((Ltuno == 1 && stop_flag == 0) ) {
                 roller_dir = 0; // 正転
                 pwm7 = ROLLER_SPIN_NORMAL_PWM;
-                motor_control(ROLLER_SPEED, PV5, 5, 5, 800, &pwm5, &dummy);
-                motor_control(ROLLER_SPEED, PV6, 5, 5, 800, &pwm6, &dummy);
+                motor_control(ROLLER_SPEED, PV5, 20, 20, 900, &pwm5, &dummy);
+                motor_control(ROLLER_SPEED, PV6, 20, 20, 900, &pwm6, &dummy);
             } else if((Ltuno == -1 && stop_flag == 0) ) {
                 roller_dir = 0; // 正転
                 pwm7 = ROLLER_SPIN_NORMAL_PWM;
-                motor_control(BAKETU_ROLLER_SPEED, PV5, 5, 5, 800, &pwm5, &dummy);
-                motor_control(BAKETU_ROLLER_SPEED, PV6, 5, 5, 800, &pwm6, &dummy);
+                motor_control(BAKETU_ROLLER_SPEED, PV5, 20, 20, 900, &pwm5, &dummy);
+                motor_control(BAKETU_ROLLER_SPEED, PV6, 20, 20, 900, &pwm6, &dummy);
 
             }
             // else { // Ltuno == 0 または (Ltuno == 1 && stop_flag == 1)
@@ -162,8 +162,8 @@ void roller(void){
             //         time3 = now;
             //     }if(now-time3 >= 800){
             //     pwm7 = 0;
-            //     motor_control(ROLLER_STOP, PV5, 5, 5, 240, &pwm5, &dummy);
-            //     motor_control(ROLLER_STOP, PV6, 5, 5, 240, &pwm6, &dummy);
+            //     motor_control(ROLLER_STOP, PV5, 20, 20, 900, &pwm5, &dummy);
+            //     motor_control(ROLLER_STOP, PV6, 20, 20, 900, &pwm6, &dummy);
             //     }   
             // }
             break;
@@ -173,14 +173,14 @@ void roller(void){
             timer_flag = 0;
             pwm7 = 0;
         if(Ltuno == 1){
-             motor_control(ROLLER_SPEED, PV5, 5, 5, 800, &pwm5, &dummy);
-            motor_control(ROLLER_SPEED, PV6, 5, 5, 800, &pwm6, &dummy);
+             motor_control(ROLLER_SPEED, PV5, 20, 20, 900, &pwm5, &dummy);
+            motor_control(ROLLER_SPEED, PV6, 20, 20, 900, &pwm6, &dummy);
         }
 
             else if(Ltuno == -1  ) {
                 roller_dir = 0; // 正転
-                motor_control(BAKETU_ROLLER_SPEED, PV5, 5, 5, 800, &pwm5, &dummy);
-                motor_control(BAKETU_ROLLER_SPEED, PV6, 5, 5, 800,wm6, &dummy);
+                motor_control(BAKETU_ROLLER_SPEED, PV5, 20, 20, 900, &pwm5, &dummy);
+                motor_control(BAKETU_ROLLER_SPEED, PV6, 20, 20, 900, &pwm6, &dummy);
 
             }
             break;
@@ -188,8 +188,8 @@ void roller(void){
       case -1:
             stop_flag = 0;
             timer_flag = 0;
-            motor_control(ROLLER_STOP, PV5, 5, 5, 800, &pwm5, &dummy);
-            motor_control(ROLLER_STOP, PV6, 5, 5, 800, &pwm6, &dummy);
+            motor_control(ROLLER_STOP, PV5, 20, 20, 900, &pwm5, &dummy);
+            motor_control(ROLLER_STOP, PV6, 20, 20, 900, &pwm6, &dummy);
             break;     
     }
     if (reset_flag == 1 && set_flag == 0) {

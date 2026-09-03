@@ -283,18 +283,12 @@ int main(void)
   /* USER CODE BEGIN WHILE */
     while (1) {
       now = HAL_GetTick();
-        PV1 = use_data[0];
-        PV2 = use_data[1];
-        PV3 = use_data[2];
-        PV4 = use_data[3];
-        PV5 = use_data[4];
-        PV6 = use_data[5];
-        map(PV1,0,255,0,1000);
-        map(PV2,0,255,0,1000);
-        map(PV3,0,255,0,1000);
-        map(PV4,0,255,0,1000);
-        map(PV5,0,255,0,1000);
-        map(PV6,0,255,0,1000);
+        PV1 = map(use_data[0],0, 255, 0, 1000);
+        PV2 = map(use_data[1],0, 255, 0, 1000);
+        PV3 = map(use_data[2],0, 255, 0, 1000);
+        PV4 = map(use_data[3],0, 255, 0, 1000);
+        PV5 = map(use_data[4],0, 255, 0, 1000);
+        PV6 = map(use_data[5],0, 255, 0, 1000);
 
 
         sbus();//SBUSの値の加工
