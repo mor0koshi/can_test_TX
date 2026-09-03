@@ -155,17 +155,20 @@ void roller(void){
                 motor_control(BAKETU_ROLLER_SPEED, PV5, 20, 20, 900, &pwm5, &dummy);
                 motor_control(BAKETU_ROLLER_SPEED, PV6, 20, 20, 900, &pwm6, &dummy);
 
+            } else if((Ltuno == 0 && stop_flag == 0) ) {
+                pwm7 = 0;
+                motor_control(ROLLER_STOP, PV5, 20, 20, 900, &pwm5, &dummy);
+                motor_control(ROLLER_STOP, PV6, 20, 20, 900, &pwm6, &dummy);
+            } else if(stop_flag == 1){
+                if(timer_flag == 0){
+                    timer_flag  = 1;
+                    time3 = now;
+                }if(now-time3 >= 800){
+                pwm7 = 0;
+                motor_control(ROLLER_STOP, PV5, 20, 20, 900, &pwm5, &dummy);
+                motor_control(ROLLER_STOP, PV6, 20, 20, 900, &pwm6, &dummy);
+                }   
             }
-            // else { // Ltuno == 0 または (Ltuno == 1 && stop_flag == 1)
-            //     if(timer_flag == 0){
-            //         timer_flag  = 1;
-            //         time3 = now;
-            //     }if(now-time3 >= 800){
-            //     pwm7 = 0;
-            //     motor_control(ROLLER_STOP, PV5, 20, 20, 900, &pwm5, &dummy);
-            //     motor_control(ROLLER_STOP, PV6, 20, 20, 900, &pwm6, &dummy);
-            //     }   
-            // }
             break;
 
         case 0:
